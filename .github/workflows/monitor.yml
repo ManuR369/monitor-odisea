@@ -1,0 +1,47 @@
+# Guardar como .github/workflows/monitor.yml en un repo (puede ser privado)
+#
+# Secrets a configurar en el repo (Settings -> Secrets and variables -> Actions):
+#   TELEGRAM_BOT_TOKEN
+#   TELEGRAM_CHAT_ID
+#
+# Nota: el cron de GitHub Actions no es exacto; "*/5" en la práctica
+# corre cada ~5-15 minutos. Para este caso alcanza y sobra.
+
+name: Monitor La Odisea IMAX
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch: {}   # permite dispararlo a mano para probar
+
+permissions:
+  contents: write   # para commitear fechas_conocidas.json (el "estado")
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instalar dependencias
+        run: |
+          pip install playwright requests
+          playwright install --with-deps chromium
+
+      - name: Chequear fechas
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python monitor_odisea.py
+
+      - name: Guardar estado
+        run: |
+          git config user.name "monitor-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add fechas_conocidas.json || true
+          git diff --cached --quiet || git commit -m "Actualizar fechas conocidas"
+          git push
