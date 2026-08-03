@@ -36,10 +36,15 @@ CHECK_INTERVAL_SECONDS = 5 * 60
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 
-# Matchea cosas tipo "Mié 5/08", "Jue 13/08", "Dom 16/08"
-DATE_PATTERN = re.compile(
-    r"\b(?:Lun|Mar|Mié|Mie|Jue|Vie|Sáb|Sab|Dom)\s+\d{1,2}/\d{2}\b"
-)
+# Matchea fechas tipo "5/08", "13/08" (en la página vienen pegadas al nombre
+# del día, ej "Mié 5/08Jue 6/08", así que buscamos solo el número).
+# Los lookarounds excluyen fechas largas tipo "16/07/2026" de la descripción.
+DATE_PATTERN = re.compile(r"(?<![\d/])(\d{1,2}/\d{2})(?![\d/])")
+
+
+def sort_key(fecha: str):
+    dia, mes = fecha.split("/")
+    return (int(mes), int(dia))
 
 
 def get_current_dates() -> set[str]:
@@ -100,8 +105,7 @@ def get_current_dates() -> set[str]:
     if not dates:
         snippet = " | ".join(body_text.split())[:600]
         print(f"[DEBUG] La página cargó pero sin fechas. Primeros caracteres del texto: {snippet}")
-    # Normalizamos tildes para que "Mié" y "Mie" no cuenten como distintas
-    return {d.replace("Mie ", "Mié ").replace("Sab ", "Sáb ") for d in dates}
+    return dates
 
 
 def load_known_dates() -> set[str]:
@@ -141,18 +145,18 @@ def check_once() -> None:
     if not known:
         # Primera corrida: solo guarda el estado inicial, no notifica
         save_known_dates(current)
-        print(f"Estado inicial guardado ({len(current)} fechas): {sorted(current)}")
+        print(f"Estado inicial guardado ({len(current)} fechas): {sorted(current, key=sort_key)}")
         return
 
     if new_dates:
         msg = (
             "🎬 ¡Nuevas fechas de La Odisea en IMAX Norcenter!\n\n"
-            + "\n".join(f"• {d}" for d in sorted(new_dates))
+            + "\n".join(f"• {d}" for d in sorted(new_dates, key=sort_key))
             + f"\n\nEntradas: {URL}"
         )
         send_telegram(msg)
         save_known_dates(current)
-        print(f"Nuevas fechas notificadas: {sorted(new_dates)}")
+        print(f"Nuevas fechas notificadas: {sorted(new_dates, key=sort_key)}")
     else:
         print(f"Sin novedades. Fechas actuales: {len(current)}")
 
