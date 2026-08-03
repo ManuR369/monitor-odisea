@@ -30,7 +30,7 @@ URL = (
     "?filmid=5875&house_id=3250"
 )
 
-STATE_FILE = Path(__file__).parent / "fechas_conocidas.json"
+STATE_FILE = Path(os.environ.get("STATE_DIR", ".")) / "fechas_conocidas.json"
 CHECK_INTERVAL_SECONDS = 5 * 60
 
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
