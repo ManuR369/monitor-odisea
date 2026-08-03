@@ -1,21 +1,14 @@
-# Guardar como .github/workflows/monitor.yml en un repo (puede ser privado)
-#
-# Secrets a configurar en el repo (Settings -> Secrets and variables -> Actions):
-#   TELEGRAM_BOT_TOKEN
-#   TELEGRAM_CHAT_ID
-#
-# Nota: el cron de GitHub Actions no es exacto; "*/5" en la práctica
-# corre cada ~5-15 minutos. Para este caso alcanza y sobra.
+# Reemplaza el contenido de .github/workflows/monitor.yml con esto
 
 name: Monitor La Odisea IMAX
 
 on:
   schedule:
     - cron: "*/5 * * * *"
-  workflow_dispatch: {}   # permite dispararlo a mano para probar
+  workflow_dispatch: {}
 
 permissions:
-  contents: write   # para commitear fechas_conocidas.json (el "estado")
+  contents: write
 
 jobs:
   check:
@@ -37,6 +30,14 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python monitor_odisea.py
+
+      - name: Subir debug (captura y texto de la página)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug
+          path: debug/
+          if-no-files-found: ignore
 
       - name: Guardar estado
         run: |
