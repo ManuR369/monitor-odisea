@@ -44,25 +44,62 @@ DATE_PATTERN = re.compile(
 
 def get_current_dates() -> set[str]:
     """Abre la página con un navegador headless y devuelve el set de fechas visibles."""
+    debug_dir = Path(__file__).parent / "debug"
+    debug_dir.mkdir(exist_ok=True)
+
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
-        page = browser.new_page(
+        context = browser.new_context(
             user_agent=(
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                 "AppleWebKit/537.36 (KHTML, like Gecko) "
                 "Chrome/126.0.0.0 Safari/537.36"
-            )
+            ),
+            locale="es-AR",
+            timezone_id="America/Argentina/Buenos_Aires",
+            viewport={"width": 1366, "height": 900},
         )
-        page.goto(URL, wait_until="networkidle", timeout=60_000)
-        # Espera extra por si las funciones tardan en cargar
+        page = context.new_page()
+        page.goto(URL, wait_until="domcontentloaded", timeout=60_000)
+
+        # Intentar cerrar modales/popups tipo "ATENCION" que puedan tapar la página
+        for selector in [
+            "button:has-text('Aceptar')",
+            "a:has-text('Aceptar')",
+            ".modal button.close",
+            ".modal .close",
+            "button:has-text('×')",
+        ]:
+            try:
+                el = page.locator(selector).first
+                if el.is_visible(timeout=1_000):
+                    el.click()
+                    page.wait_for_timeout(500)
+            except Exception:
+                pass
+
+        # Esperar a que aparezcan las fechas (hasta 25 segundos)
         try:
-            page.wait_for_selector("text=/\\d{1,2}\\/\\d{2}/", timeout=15_000)
+            page.wait_for_selector("text=/\\d{1,2}\\/\\d{2}/", timeout=25_000)
         except Exception:
             pass  # si no aparece nada, devolvemos lo que haya
+
+        page.wait_for_timeout(3_000)  # margen extra para que termine de renderizar
         body_text = page.inner_text("body")
+
+        # Debug: guardar captura y texto para diagnosticar
+        try:
+            page.screenshot(path=str(debug_dir / "pagina.png"), full_page=True)
+            (debug_dir / "texto_pagina.txt").write_text(body_text, encoding="utf-8")
+        except Exception:
+            pass
+
         browser.close()
 
     dates = set(DATE_PATTERN.findall(body_text))
+    if not dates:
+        snippet = " | ".join(body_text.split())[:600]
+        print(f"[DEBUG] La página cargó pero sin fechas. Primeros caracteres del texto: {snippet}")
     # Normalizamos tildes para que "Mié" y "Mie" no cuenten como distintas
     return {d.replace("Mie ", "Mié ").replace("Sab ", "Sáb ") for d in dates}
 
