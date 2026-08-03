@@ -30,7 +30,9 @@ URL = (
     "?filmid=5875&house_id=3250"
 )
 
-STATE_FILE = Path(os.environ.get("STATE_DIR", ".")) / "fechas_conocidas.json"
+# En Railway definir STATE_DIR=/data (con un volumen montado ahi) para que
+# el archivo de estado sobreviva a los redeploys. Local: usa la carpeta actual.
+STATE_FILE = Path(os.environ.get("STATE_DIR", str(Path(__file__).parent))) / "fechas_conocidas.json"
 CHECK_INTERVAL_SECONDS = 5 * 60
 
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
@@ -92,12 +94,13 @@ def get_current_dates() -> set[str]:
         page.wait_for_timeout(3_000)  # margen extra para que termine de renderizar
         body_text = page.inner_text("body")
 
-        # Debug: guardar captura y texto para diagnosticar
-        try:
-            page.screenshot(path=str(debug_dir / "pagina.png"), full_page=True)
-            (debug_dir / "texto_pagina.txt").write_text(body_text, encoding="utf-8")
-        except Exception:
-            pass
+        # Debug: guardar captura y texto para diagnosticar (solo si DEBUG=1)
+        if os.environ.get("DEBUG") == "1":
+            try:
+                page.screenshot(path=str(debug_dir / "pagina.png"), full_page=True)
+                (debug_dir / "texto_pagina.txt").write_text(body_text, encoding="utf-8")
+            except Exception:
+                pass
 
         browser.close()
 
