@@ -33,6 +33,11 @@ URL = (
 # En Railway definir STATE_DIR=/data (con un volumen montado ahi) para que
 # el archivo de estado sobreviva a los redeploys. Local: usa la carpeta actual.
 STATE_FILE = Path(os.environ.get("STATE_DIR", str(Path(__file__).parent))) / "fechas_conocidas.json"
+HEALTH_FILE = Path(os.environ.get("STATE_DIR", str(Path(__file__).parent))) / "salud.json"
+
+# Cantidad de fallos consecutivos antes de alertar (evita falsas alarmas por
+# cortes pasajeros de red: con chequeos cada 5 min, 3 fallos = ~15 min caido)
+UMBRAL_FALLOS = 3
 CHECK_INTERVAL_SECONDS = 5 * 60
 
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
@@ -136,11 +141,69 @@ def send_telegram(message: str) -> None:
     resp.raise_for_status()
 
 
+def load_health() -> dict:
+    if HEALTH_FILE.exists():
+        try:
+            return json.loads(HEALTH_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    return {"fallos": 0, "alertado": False}
+
+
+def save_health(health: dict) -> None:
+    HEALTH_FILE.write_text(json.dumps(health), encoding="utf-8")
+
+
+def registrar_fallo(motivo: str) -> None:
+    """Cuenta fallos consecutivos y alerta por Telegram al llegar al umbral."""
+    health = load_health()
+    health["fallos"] += 1
+    print(f"[FALLO {health['fallos']}/{UMBRAL_FALLOS}] {motivo}")
+    if health["fallos"] >= UMBRAL_FALLOS and not health["alertado"]:
+        try:
+            send_telegram(
+                "⚠️ El monitor de La Odisea tiene problemas.\n\n"
+                f"Motivo: {motivo}\n"
+                f"Fallos consecutivos: {health['fallos']} (~{health['fallos'] * 5} min).\n\n"
+                "Puede ser que la página haya cambiado, que esté caída, o que "
+                "estén bloqueando al bot. Conviene revisar los logs en Railway "
+                f"y la página a mano: {URL}\n\n"
+                "Te aviso de nuevo cuando se recupere solo. Mientras tanto no "
+                "voy a poder detectar fechas nuevas."
+            )
+            health["alertado"] = True
+        except Exception as e:
+            print(f"[ERROR] No se pudo enviar la alerta por Telegram: {e}")
+    save_health(health)
+
+
+def registrar_exito() -> None:
+    """Resetea el contador de fallos y avisa si venia de un estado de alerta."""
+    health = load_health()
+    if health["alertado"]:
+        try:
+            send_telegram(
+                "✅ El monitor de La Odisea se recuperó y volvió a leer las "
+                "fechas correctamente. Todo en orden de nuevo."
+            )
+        except Exception as e:
+            print(f"[ERROR] No se pudo enviar el aviso de recuperacion: {e}")
+    if health["fallos"] or health["alertado"]:
+        save_health({"fallos": 0, "alertado": False})
+
+
 def check_once() -> None:
-    current = get_current_dates()
-    if not current:
-        print("No se detectaron fechas en la página (¿cambió el sitio o falló la carga?).")
+    try:
+        current = get_current_dates()
+    except Exception as e:
+        registrar_fallo(f"Error al abrir o leer la página: {type(e).__name__}: {e}")
         return
+
+    if not current:
+        registrar_fallo("La página cargó pero no se encontró ninguna fecha en el texto.")
+        return
+
+    registrar_exito()
 
     known = load_known_dates()
     new_dates = current - known
