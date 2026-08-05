@@ -60,7 +60,11 @@ def get_current_dates() -> set[str]:
     debug_dir.mkdir(exist_ok=True)
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
+        # --disable-dev-shm-usage evita que Chromium se cuelgue en contenedores
+        # Docker (Railway) donde /dev/shm es chico
+        browser = p.chromium.launch(
+            headless=True, args=["--disable-dev-shm-usage"]
+        )
         context = browser.new_context(
             user_agent=(
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -70,6 +74,14 @@ def get_current_dates() -> set[str]:
             locale="es-AR",
             timezone_id="America/Argentina/Buenos_Aires",
             viewport={"width": 1366, "height": 900},
+        )
+        # Bloqueamos imagenes, videos y fuentes: no las necesitamos para leer
+        # las fechas y le bajan muchisimo el consumo de memoria al navegador
+        context.route(
+            "**/*",
+            lambda route: route.abort()
+            if route.request.resource_type in {"image", "media", "font"}
+            else route.continue_(),
         )
         page = context.new_page()
         page.goto(URL, wait_until="domcontentloaded", timeout=60_000)
@@ -97,7 +109,13 @@ def get_current_dates() -> set[str]:
             pass  # si no aparece nada, devolvemos lo que haya
 
         page.wait_for_timeout(3_000)  # margen extra para que termine de renderizar
-        body_text = page.inner_text("body")
+        try:
+            body_text = page.inner_text("body", timeout=10_000)
+        except Exception:
+            # Fallback directo por JS si inner_text se cuelga
+            body_text = page.evaluate(
+                "() => document.body ? document.body.innerText : ''"
+            )
 
         # Debug: guardar captura y texto para diagnosticar (solo si DEBUG=1)
         if os.environ.get("DEBUG") == "1":
