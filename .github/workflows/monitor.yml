@@ -1,11 +1,16 @@
-# Reemplaza el contenido de .github/workflows/monitor.yml con esto
+name: Monitor Dune IMAX
 
-name: Monitor La Odisea IMAX
-
+# Cada corrida chequea cada 30 s durante ~5h45m. El cron cada 30 min deja
+# siempre una corrida en cola (concurrency) que arranca apenas termina la
+# anterior, asi no hay huecos aunque GitHub atrase el cron.
 on:
   schedule:
-   - cron: "4,14,24,34,44,54 * * * *"
+    - cron: "*/30 * * * *"
   workflow_dispatch: {}
+
+concurrency:
+  group: monitor-dune
+  cancel-in-progress: false
 
 permissions:
   contents: write
@@ -13,36 +18,22 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
+    timeout-minutes: 355
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Instalar dependencias
-        run: |
-          pip install playwright requests
-          playwright install --with-deps chromium
-
-      - name: Chequear fechas
+      - name: Chequear Dune cada 30 s
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python monitor_odisea.py
-
-      - name: Subir debug (captura y texto de la página)
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: debug
-          path: debug/
-          if-no-files-found: ignore
+        run: |
+          pip install -q requests
+          python monitor_dune.py --loop 20400
 
       - name: Guardar estado
+        if: always()
         run: |
           git config user.name "monitor-bot"
           git config user.email "bot@users.noreply.github.com"
-          git add fechas_conocidas.json || true
-          git diff --cached --quiet || git commit -m "Actualizar fechas conocidas"
-          git push
+          git add dune_avisadas.json 2>/dev/null || true
+          git diff --cached --quiet || (git commit -m "Dune avisada" && git pull --rebase && git push)
