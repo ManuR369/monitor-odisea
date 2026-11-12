@@ -1,8 +1,9 @@
 name: Monitor Dune IMAX
 
-# Cada corrida chequea cada 30 s durante ~5h45m. El cron cada 30 min deja
-# siempre una corrida en cola (concurrency) que arranca apenas termina la
-# anterior, asi no hay huecos aunque GitHub atrase el cron.
+# Cada corrida chequea cada 30 s durante ~5h45m y apenas arranca deja
+# encolada la siguiente (concurrency la hace esperar), asi arranca justo
+# cuando termina esta y no hay huecos. El cron queda solo como respaldo,
+# porque GitHub lo dispara cada varias horas.
 on:
   schedule:
     - cron: "*/30 * * * *"
@@ -14,6 +15,7 @@ concurrency:
 
 permissions:
   contents: write
+  actions: write
 
 jobs:
   check:
@@ -22,10 +24,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Encolar la siguiente corrida
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run monitor.yml --ref main --repo ${{ github.repository }}
+
       - name: Chequear Dune cada 30 s
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          PYTHONUNBUFFERED: "1"
         run: |
           pip install -q requests
           python monitor_dune.py --loop 20400
